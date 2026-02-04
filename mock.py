@@ -1,36 +1,34 @@
 #!/usr/bin/env python3
 
 import argparse
-import numpy as np
+import time
+import csv
+from sensormodel import getModel
+from androidEmulator import send
 
 parser = argparse.ArgumentParser()
-#esempio> ./mock.py 
-parser.add_argument("csv_path", help="path to CSV file")
-parser.add_argument("-r", type=int, default="1", help="number of repetitions of the csv file")
-parser.add_argument("--interp")
-parser.add_argument("--period", type=float, default="10", help="milliseconds between injections (interp only)")
+parser.add_argument("magnitude", choices=("Lower", "Normal", "Higher"))
+parser.add_argument("frequency", type=float, help="injection frequency in hertz")
 args = parser.parse_args()
 
-G = 9.80665  # m/s^2
+model = getModel(args.magnitude)
+if(args.frequency == 10000):
+	period = None
+else:
+	period = 1.0 / args.frequency # in seconds
 
-class MockAccelerometer:
-	def __init__(self, n_forces=3, seed=0):
-		rng = np.random.default_rng(seed)
+t0 = time.time()
+now = t0
+end = t0 + 10.0
+with open("latest_injection_log.csv", "w", newline="") as f:
+	writer = csv.writer(f)
+	writer.writerow(["Timestamp", "ax", "ay", "az"])
 
-		self.n = n_forces
-		self.amps = rng.uniform(0.2, 1.0, size=(n_forces, 3))
-		self.freqs = rng.uniform(0.1, 2.0, size=n_forces)
-		self.phases = rng.uniform(0, 2*np.pi, size=(n_forces, 3))
-
-	#accelerometer value at time t (seconds)
-	def value(self, t):
-		t = np.asarray(t)
-
-		acc = np.zeros(t.shape + (3,))
-
-		for k in range(self.n):
-			omega = 2 * np.pi * self.freqs[k]
-			acc += self.amps[k] * np.sin(omega * t[..., None] + self.phases[k])
-
-		acc[..., 2] += G
-		return acc
+	while end > now:
+		[ax, ay, az] = model.value(now-t0)
+		send(f"sensor set acceleration {ax}:{ay}:{az}")
+		timestamp = int(now*1000.0)
+		writer.writerow([timestamp, ax, ay, az])
+		if(period != None):
+			time.sleep(period)
+		now = time.time()

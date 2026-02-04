@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 
 import csv
-import subprocess
+from androidEmulator import send
 import time
 import re
 import argparse
 from collections import deque
 from scipy.interpolate import CubicSpline
-import numpy as np
 
 parser = argparse.ArgumentParser()
-# ./inject.py mock
-#esempio> ./inject.py path/to/file.csv
-#esempio> ./inject.py -agm path/to/file.csv -r 10
-#esempio> ./inject.py -a path/to/file.csv -r 2 --period 5
 parser.add_argument("-a", action="store_true", help="enable accelerometer")
 parser.add_argument("-g", action="store_true", help="enable gyroscope")
 parser.add_argument("-m", action="store_true", help="enable magnetic field")
@@ -40,11 +35,6 @@ MAG_ALIASES = {"mx", "magnetometerx"}, \
 			  {"my", "magnetometery"}, \
 			  {"mz", "magnetometerz"}
 
-EMULATOR_HOST = "localhost"
-EMULATOR_PORT = 5554
-
-G = 9.80665  # m/s^2
-
 # -------- csv header normalization --------
 def normalize(col):
 	return re.sub(r'[^a-z]', '', col.lower())
@@ -59,25 +49,6 @@ def find_indices(headers, groups):
 				break
 		idx.append(found)
 	return idx
-
-# -------- emulator console --------
-proc = subprocess.Popen(
-	["nc", EMULATOR_HOST, str(EMULATOR_PORT)],
-	stdin=subprocess.PIPE,
-	stdout=subprocess.PIPE,
-	stderr=subprocess.STDOUT,
-	text=True,
-	bufsize=1
-)
-
-def send(cmd):
-	proc.stdin.write(cmd + "\n")
-	proc.stdin.flush()
-	out = proc.stdout.readline().strip()
-	if args.v:
-		print(f"{time.time():.3f}> {cmd}")
-	if out != "OK":
-		print(out)
 
 def exact(reader, ts_idx, acc_idx, gyr_idx, mag_idx):
 	print(f"using exact injection")
@@ -163,74 +134,28 @@ def interpolation(reader, ts_idx, acc_idx, gyr_idx, mag_idx):
 
 		time.sleep(args.period/1000.0)
 
-class MockAccelerometer:
-	# sum of different sinusoidal waves
-	def __init__(self, n_waves=5, seed=2):
-		rng = np.random.default_rng(seed)
-		self.n = n_waves
-		self.amps = rng.uniform(0.5, 10.0, size=(n_waves, 3))
-		self.freqs = rng.uniform(0.1, 2.0, size=n_waves)
-		self.phases = rng.uniform(0, 2*np.pi, size=(n_waves, 3))
-
-	#accelerometer value at time t (seconds)
-	def value(self, t):
-		t = np.asarray(t)
-		acc = np.zeros(t.shape + (3,))
-		for k in range(self.n):
-			omega = 2 * np.pi * self.freqs[k]
-			acc += self.amps[k] * np.sin(omega * t[..., None] + self.phases[k])
-		
-		acc[..., 2] += G
-		return acc
-
-def pureFunction():
-	print("Injection of pure function")
-	model = MockAccelerometer()
+with open(args.csv_path, newline="") as f:
+	reader = csv.reader(f)
+	headers = next(reader)
+	ts_idx = next(
+		i for i, h in enumerate(headers)
+		if "timestamp" in normalize(h)
+	)
+	acc_idx = find_indices(headers, ACC_ALIASES)
+	gyr_idx = find_indices(headers, GYR_ALIASES)
+	mag_idx = find_indices(headers, MAG_ALIASES)
+	ACC_ENABLED = False if any(i is None for i in acc_idx) else ACC_ENABLED
+	GYRO_ENABLED = False if any(i is None for i in gyr_idx) else GYRO_ENABLED
+	MAG_ENABLED = False if any(i is None for i in mag_idx) else MAG_ENABLED
+	print(f"csv format: ts={ts_idx} acc={acc_idx} gyro={gyr_idx} mag={mag_idx}")
 	
-	t0 = time.time()
-	now = t0
-	end = t0 + 10.0
-
-	with open("latest_injection_log.csv", "w", newline="") as f:
-		writer = csv.writer(f)
-		writer.writerow(["Timestamp", "ax", "ay", "az"])
-
-		while end > now:
-			[ax, ay, az] = model.value(now-t0)
-			send(f"sensor set acceleration {ax}:{ay}:{az}")
-			timestamp = int(now*1000.0)
-			writer.writerow([timestamp, ax, ay, az])
-			if(args.period):
-				time.sleep(args.period/1000.0)
-			now = time.time()
-
-
-# -------- main --------
-if(args.csv_path == "mock"):
-	pureFunction()
-else:
-	with open(args.csv_path, newline="") as f:
-		reader = csv.reader(f)
-		headers = next(reader)
-		ts_idx = next(
-			i for i, h in enumerate(headers)
-			if "timestamp" in normalize(h)
-		)
-		acc_idx = find_indices(headers, ACC_ALIASES)
-		gyr_idx = find_indices(headers, GYR_ALIASES)
-		mag_idx = find_indices(headers, MAG_ALIASES)
-		ACC_ENABLED = False if any(i is None for i in acc_idx) else ACC_ENABLED
-		GYRO_ENABLED = False if any(i is None for i in gyr_idx) else GYRO_ENABLED
-		MAG_ENABLED = False if any(i is None for i in mag_idx) else MAG_ENABLED
-		print(f"csv format: ts={ts_idx} acc={acc_idx} gyro={gyr_idx} mag={mag_idx}")
+	for i in range(int(args.r)):
+		if args.period:
+			interpolation(reader, ts_idx, acc_idx, gyr_idx, mag_idx)
+		else:
+			exact(reader, ts_idx, acc_idx, gyr_idx, mag_idx)
 		
-		for i in range(int(args.r)):
-			if args.period:
-				interpolation(reader, ts_idx, acc_idx, gyr_idx, mag_idx)
-			else:
-				exact(reader, ts_idx, acc_idx, gyr_idx, mag_idx)
-			
-			if(int(args.r) > 1):
-				print(f"injection completed {i+1}/{args.r}")
-				f.seek(0)
-				next(reader)
+		if(int(args.r) > 1):
+			print(f"injection completed {i+1}/{args.r}")
+			f.seek(0)
+			next(reader)
