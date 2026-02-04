@@ -1,2 +1,3 @@
 *.apk
 serviceAccountKey.json
+node_modules
