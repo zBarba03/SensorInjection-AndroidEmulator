@@ -12,6 +12,8 @@ const { parse } = require("csv-parse");
 const readline = require("readline");
 const path = require("path");
 const admin = require("firebase-admin");
+//const { spawn } = require("child_process");
+import { spawn } from 'node:child_process';
 
 const serviceAccount = require("./serviceAccountKey.json");
 admin.initializeApp({
@@ -424,13 +426,39 @@ async function SimulateMotiontracker(driver, isFirstTime = true) {
 	// TODO
 }
 async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay) {
-	// config as multiple parameters
+	const WAIT_AFTER_CLICK = 1200;
+	
+	//TODO if app is already recording, click "Cancel"
+	
 	// select parameters in emulator
+	try { await driver.$(`android=new UiSelector().textContains("${magnitude}")`).click(); } catch {}
+	await sleep(WAIT_AFTER_CLICK);
+	try { await driver.$(`android=new UiSelector().textContains("${injectionFrequency}Hz")`).click(); } catch {}
+	await sleep(WAIT_AFTER_CLICK);
+	try { await driver.$(`android=new UiSelector().textContains("${sensorDelay}")`).click(); } catch {}
+	await sleep(WAIT_AFTER_CLICK);
+	
 	// start recording
+	try { await driver.$(`android=new UiSelector().textContains("Start Recording")`).click(); } catch {}
+	
 	// start python injection script
-	// wait until python script finishes
+	const result = await Promise((resolve, reject) => {
+    const py = spawn("./mock.py", [magnitude, injectionFrequency, sensorDelay]);
+    let stdout = "";
+    let stderr = "";
+    py.stdout.on("data", (data) => { stdout += data.toString();});
+    py.stderr.on("data", (data) => { stderr += data.toString();});
+    py.on("close", (code) => {
+      if (code !== 0) { reject(new Error(`Python exited with code ${code}\n${stderr}`)); }
+      else { resolve(stdout); }
+    });
+    py.on("error", reject);
+  });
+	if(result != "") Console.log(result)
+	// python script finished with saved log file
+	
 	// save recording
-	// rename and move script log
+	try { await driver.$(`android=new UiSelector().textContains("Stop and Save")`).click(); } catch {}
 }
 
 function selectApp(arg) {
@@ -709,39 +737,25 @@ async function injectBatchPythonMode(driver, appArg) {
 		console.error("Modalità non implementata per questa app");
 		process.exit(2);
 	}
-	/*
-		FORMATO DEI DATI (ordine imperativo)
-		- magnitudine (Lower, Normal, Higher)
-		- frequenza di iniezione (50hz, 100hz, 200hz, 500hz, 1000hz, 10Mhz)
-			dove 10k non è una frequenza rigorosa come le altre ma la massima possibile,
-			in maniera simile al busywaiting, misurata in media come 10 Mhz. controllare che non sia limitata da velocità I/O di scrivere il log
-		- Sensor delay (GAME, FASTEST)
-			costanti con valori (0, 1)
-			nell'emulatore vengono rispettate molto bene con frequenze di 50hz e 100hz
-		- iniettati o letti (send, recv)
-			+ per dispositivi diversi -> send1, recv1,..
-		- numero di iterazione (0, 1, 2,..)
-		+ data in formato MMMddHHmm (ex. Jan010730)
-	*/
 	let injectionCount = 0;
+	let iterationsCount = 1;
 	const simulate = selectSimulation(appArg);
-	let isFirstCall = true;
 
 	for(const magnitude of ['Lower', 'Normal', 'Higher']) {
 		for(const injectionFrequency of [50, 100, 200, 500, 1000, 10000]) {
 			for(const sensorDelay of ['DELAY-GAME', 'DELAY-FASTEST']) {
-				for(const iteration=0; iteration<1; iteration++) {
-					// only one iteration
-					Console.log(`\n=== CONFIG ${magnitude}_${injectionFrequency}_${sensorDelay}_send#_${iteration} ===`);
+				for(const iteration=0; iteration<iterationsCount; iteration++) {
+					Console.log(`iniezione: ${magnitude}_${injectionFrequency}_${sensorDelay}_send#_${iteration}`);
 					SimulateReina(driver, magnitude, injectionFrequency, sensorDelay);
-					injectionCount++
 				}
+				injectionCount++;
 			}
 		}
 	}
 
-	console.log(`\n=== RIEPILOGO INIEZIONI ===`);
-	console.log(`configurazioni iniettate: ${injectionCount}`);
+	console.log(`\n=== INIEZIONI COMPLETATE ===`);
+	console.log(`configurazioni totali: ${injectionCount}`);
+	console.log(`iterazioni: ${iterationsCount}`);
 }
 
 async function main() {
