@@ -12,8 +12,8 @@ const { parse } = require("csv-parse");
 const readline = require("readline");
 const path = require("path");
 const admin = require("firebase-admin");
-//const { spawn } = require("child_process");
-import { spawn } from 'node:child_process';
+const { spawn } = require("child_process");
+//import { spawn } from 'node:child_process';
 
 const serviceAccount = require("./serviceAccountKey.json");
 admin.initializeApp({
@@ -51,7 +51,7 @@ const accupedoPath      = process.env.APP_ACCUPEDO_APK   || "C:/Users/Utente/Dow
 const walkloggerPath    = process.env.APP_WALKLOGGER_APK || "C:/Users/Utente/Downloads/walklogger-pedometer.apk";
 const forlaniPath       = process.env.APP_FORLANI_APK    || "./steplab.apk";
 const motiontrackerPath = process.env.APP_MOTIONTRACKER_APK || "./motiontracker.apk";
-const sensorcsvPath     = process.env.APP_SENSORCSV_APK || "./SensorCSV_Jan28.apk";
+const sensorcsvPath     = process.env.APP_SENSORCSV_APK  || "./sensorcsv.apk";
 
 function envBool(name, def) { const v = process.env[name]; if (v == null) return def; return /^(1|true|yes|y|on)$/i.test(v); }
 function isAbsolute(p)      { return /^([A-Za-z]:\\|\/)/.test(p); }
@@ -426,7 +426,7 @@ async function SimulateMotiontracker(driver, isFirstTime = true) {
 	// TODO
 }
 async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay) {
-	const WAIT_AFTER_CLICK = 1200;
+	const WAIT_AFTER_CLICK = 100;
 	
 	//TODO if app is already recording, click "Cancel"
 	
@@ -442,7 +442,7 @@ async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay)
 	try { await driver.$(`android=new UiSelector().textContains("Start Recording")`).click(); } catch {}
 	
 	// start python injection script
-	const result = await Promise((resolve, reject) => {
+	const result = await new Promise((resolve, reject) => {
     const py = spawn("./mock.py", [magnitude, injectionFrequency, sensorDelay]);
     let stdout = "";
     let stderr = "";
@@ -454,7 +454,7 @@ async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay)
     });
     py.on("error", reject);
   });
-	if(result != "") Console.log(result)
+	if(result != "") console.log(result)
 	// python script finished with saved log file
 	
 	// save recording
@@ -739,14 +739,14 @@ async function injectBatchPythonMode(driver, appArg) {
 	}
 	let injectionCount = 0;
 	let iterationsCount = 1;
-	const simulate = selectSimulation(appArg);
+	//const simulate = selectSimulation(appArg);
 
-	for(const magnitude of ['Lower', 'Normal', 'Higher']) {
-		for(const injectionFrequency of [50, 100, 200, 500, 1000, 10000]) {
-			for(const sensorDelay of ['DELAY-GAME', 'DELAY-FASTEST']) {
-				for(const iteration=0; iteration<iterationsCount; iteration++) {
-					Console.log(`iniezione: ${magnitude}_${injectionFrequency}_${sensorDelay}_send#_${iteration}`);
-					SimulateReina(driver, magnitude, injectionFrequency, sensorDelay);
+	for(magnitude of ['Lower', 'Normal', 'Higher']) {
+		for(injectionFrequency of [50, 100, 200, 500, 1000, 10000]) {
+			for(sensorDelay of ['DELAY-GAME', 'DELAY-FASTEST']) {
+				for(iteration=0; iteration<iterationsCount; iteration++) {
+					console.log(`iniezione: ${magnitude}_${injectionFrequency}_${sensorDelay}_send#_${iteration}`);
+					await SimulateReina(driver, magnitude, injectionFrequency, sensorDelay);
 				}
 				injectionCount++;
 			}
@@ -808,7 +808,8 @@ async function main() {
 			"appium:autoGrantPermissions": envBool("AUTO_GRANT_PERMISSIONS", true),
 			"appium:noReset": envBool("NO_RESET", true),
 			"appium:allowInsecure": ["emulator_console"]
-		}
+		},
+		logLevel: "error",
 	};
 	
 	console.log("== Avvio sessione ==");

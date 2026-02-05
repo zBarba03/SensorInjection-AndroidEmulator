@@ -1,4 +1,22 @@
 {
+  "name": "test_injection",
+  "version": "1.0.0",
+  "description": "The goal is to inject sensor data into the android emulator from a CSV file",
+  "homepage": "https://github.com/zBarba03/SensorInjection-AndroidEmulator#readme",
+  "bugs": {
+    "url": "https://github.com/zBarba03/SensorInjection-AndroidEmulator/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zBarba03/SensorInjection-AndroidEmulator.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "test_injection.js",
+  "scripts": {
+    "wdio": "wdio run ./wdio.conf.js"
+  },
   "dependencies": {
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",
@@ -14,8 +32,5 @@
     "@wdio/spec-reporter": "^9.20.0",
     "@wdio/visual-service": "^9.0.2",
     "appium-uiautomator2-driver": "^6.7.3"
-  },
-  "scripts": {
-    "wdio": "wdio run ./wdio.conf.js"
   }
 }
