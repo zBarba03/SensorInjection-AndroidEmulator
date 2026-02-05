@@ -21,7 +21,7 @@ class AccelerometerModel:
 			omega = 2 * np.pi * self.freqs[k]
 			acc += self.amps[k] * np.sin(omega * t[..., None] + self.phases[k])
 		
-		#acc[..., 2] += G
+		acc[..., 2] += G
 		return acc
 
 def getModel(magnitude: str):
