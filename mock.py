@@ -10,7 +10,7 @@ import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("magnitude", choices=("Lower", "Normal", "Higher"))
-parser.add_argument("frequency", type=float, help="injection frequency in hertz")
+parser.add_argument("frequency", type=int, help="injection frequency in hertz")
 parser.add_argument("delay", choices=("DELAY-GAME", "DELAY-FASTEST"), help="android sensor delay (used only for csv logging)")
 args = parser.parse_args()
 
@@ -18,15 +18,14 @@ model = getModel(args.magnitude)
 if(args.frequency == 10000): period = None
 else: period = 1.0 / args.frequency # in seconds
 
-files = glob.glob(f"../pythonLogs/{args.magnitude}_{int(args.frequency)}_{args.delay}_send_*.csv")
+files = glob.glob(f"../pythonLogs/{args.magnitude}_{args.frequency}_{args.delay}_send_*.csv")
 iteration = len(files)
-logFile = f"../pythonLogs/{args.magnitude}_{int(args.frequency)}_{args.delay}_send_{iteration}.csv"
+logFile = f"../pythonLogs/{args.magnitude}_{args.frequency}_{args.delay}_send_{iteration}.csv"
 print("writing to ", logFile)
 
-if os.exists(logFile):
+if os.path.exists(logFile):
 	print("error in iteration numbers, exiting")
 	exit(1)
-
 
 t0 = time.time()
 now = t0
@@ -36,10 +35,14 @@ with open(logFile, "w", newline="") as f:
 	writer.writerow(["timestamp", "ax", "ay", "az"])
 
 	while end > now:
+
+		beforeCalc = time.monotonic()
 		[ax, ay, az] = model.value(now-t0)
 		send(f"sensor set acceleration {ax}:{ay}:{az}")
 		timestamp = int(now*1000.0)
 		writer.writerow([timestamp, ax, ay, az])
+		afterCalc = time.monotonic()
+
 		if(period != None):
-			time.sleep(period)
+			time.sleep(period - (afterCalc-beforeCalc))
 		now = time.time()

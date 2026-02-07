@@ -16,8 +16,7 @@ proc = subprocess.Popen(
 def send(cmd: str, verbose: bool = False):
 	proc.stdin.write(cmd + "\n")
 	proc.stdin.flush()
-	out = proc.stdout.readline().strip()
 	if verbose:
+		out = proc.stdout.readline().strip()
 		print(f"{time.time():.3f}> {cmd}")
-	if out != "OK":
-		print(out)
+		#if out != "OK": print(out)

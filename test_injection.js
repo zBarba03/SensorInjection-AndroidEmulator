@@ -51,7 +51,7 @@ const accupedoPath      = process.env.APP_ACCUPEDO_APK   || "C:/Users/Utente/Dow
 const walkloggerPath    = process.env.APP_WALKLOGGER_APK || "C:/Users/Utente/Downloads/walklogger-pedometer.apk";
 const forlaniPath       = process.env.APP_FORLANI_APK    || "./steplab.apk";
 const motiontrackerPath = process.env.APP_MOTIONTRACKER_APK || "./motiontracker.apk";
-const sensorcsvPath     = process.env.APP_SENSORCSV_APK  || "./sensorcsv.apk";
+const sensorcsvPath     = process.env.APP_SENSORCSV_APK  || "/home/zbarba/uni/tesi/repo/sensorcsv.apk";
 
 function envBool(name, def) { const v = process.env[name]; if (v == null) return def; return /^(1|true|yes|y|on)$/i.test(v); }
 function isAbsolute(p)      { return /^([A-Za-z]:\\|\/)/.test(p); }
@@ -426,7 +426,7 @@ async function SimulateMotiontracker(driver, isFirstTime = true) {
 	// TODO
 }
 async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay) {
-	const WAIT_AFTER_CLICK = 100;
+	const WAIT_AFTER_CLICK = 1000;
 	
 	//TODO if app is already recording, click "Cancel"
 	
@@ -443,22 +443,22 @@ async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay)
 	
 	// start python injection script
 	const result = await new Promise((resolve, reject) => {
-    const py = spawn("./mock.py", [magnitude, injectionFrequency, sensorDelay]);
-    let stdout = "";
-    let stderr = "";
-    py.stdout.on("data", (data) => { stdout += data.toString();});
-    py.stderr.on("data", (data) => { stderr += data.toString();});
-    py.on("close", (code) => {
-      if (code !== 0) { reject(new Error(`Python exited with code ${code}\n${stderr}`)); }
-      else { resolve(stdout); }
-    });
-    py.on("error", reject);
-  });
-	if(result != "") console.log(result)
+		const py = spawn("./mock.py", [magnitude, injectionFrequency, sensorDelay]);
+		let stdout = "";
+		let stderr = "";
+		py.stdout.on("data", (data) => { stdout += data.toString();});
+		py.stderr.on("data", (data) => { stderr += data.toString();});
+		py.on("close", (code) => {
+		if (code !== 0) { reject(new Error(`Python exited with code ${code}\n${stderr}`)); }
+		else { resolve(stdout); }
+		});
+		py.on("error", reject);
+	});
 	// python script finished with saved log file
 	
 	// save recording
 	try { await driver.$(`android=new UiSelector().textContains("Stop and Save")`).click(); } catch {}
+	await sleep(WAIT_AFTER_CLICK);
 }
 
 function selectApp(arg) {
@@ -738,23 +738,23 @@ async function injectBatchPythonMode(driver, appArg) {
 		process.exit(2);
 	}
 	let injectionCount = 0;
-	let iterationsCount = 1;
+	const iterationsCount = 10;
 	//const simulate = selectSimulation(appArg);
 
-	for(magnitude of ['Lower', 'Normal', 'Higher']) {
-		for(injectionFrequency of [50, 100, 200, 500, 1000, 10000]) {
-			for(sensorDelay of ['DELAY-GAME', 'DELAY-FASTEST']) {
-				for(iteration=0; iteration<iterationsCount; iteration++) {
-					console.log(`iniezione: ${magnitude}_${injectionFrequency}_${sensorDelay}_send#_${iteration}`);
+	for(iteration=0; iteration<iterationsCount; iteration++) {
+		for(magnitude of ['Lower', 'Normal', 'Higher']) {
+			for(injectionFrequency of [50, 100, 200, 500, 1000, 10000]) {
+				for(sensorDelay of ['DELAY-GAME', 'DELAY-FASTEST']) {
+					console.log(`iniezione: ${magnitude}_${injectionFrequency}_${sensorDelay}_send_${iteration}`);
 					await SimulateReina(driver, magnitude, injectionFrequency, sensorDelay);
+					injectionCount++;
 				}
-				injectionCount++;
 			}
 		}
 	}
 
 	console.log(`\n=== INIEZIONI COMPLETATE ===`);
-	console.log(`configurazioni totali: ${injectionCount}`);
+	console.log(`iniezioni totali: ${injectionCount}`);
 	console.log(`iterazioni: ${iterationsCount}`);
 }
 
