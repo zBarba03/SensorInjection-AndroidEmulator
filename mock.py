@@ -43,6 +43,6 @@ with open(logFile, "w", newline="") as f:
 		writer.writerow([timestamp, ax, ay, az])
 		afterCalc = time.monotonic()
 
-		if(period != None):
+		if(period != None and afterCalc-beforeCalc < period):
 			time.sleep(period - (afterCalc-beforeCalc))
 		now = time.time()

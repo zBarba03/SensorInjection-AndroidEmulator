@@ -740,12 +740,12 @@ async function injectBatchPythonMode(driver, appArg) {
 	let injectionCount = 0;
 	const iterationsCount = 10;
 	//const simulate = selectSimulation(appArg);
-
+	
 	for(iteration=0; iteration<iterationsCount; iteration++) {
 		for(magnitude of ['Lower', 'Normal', 'Higher']) {
 			for(injectionFrequency of [50, 100, 200, 500, 1000, 10000]) {
 				for(sensorDelay of ['DELAY-GAME', 'DELAY-FASTEST']) {
-					console.log(`iniezione: ${magnitude}_${injectionFrequency}_${sensorDelay}_send_${iteration}`);
+					console.log(`${new Date().toISOString()} - iniezione: ${magnitude}_${injectionFrequency}_${sensorDelay}_send_${iteration}`);
 					await SimulateReina(driver, magnitude, injectionFrequency, sensorDelay);
 					injectionCount++;
 				}
