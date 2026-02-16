@@ -7,23 +7,25 @@ import re
 import argparse
 from collections import deque
 from scipy.interpolate import CubicSpline
+import pandas as pd
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-a", action="store_true", help="enable accelerometer")
 parser.add_argument("-g", action="store_true", help="enable gyroscope")
 parser.add_argument("-m", action="store_true", help="enable magnetic field")
-parser.add_argument("csv_path", help="path to CSV file")
 parser.add_argument("-r", type=int, default="1", help="number of repetitions of the csv file")
+parser.add_argument("-v", action="store_true", help="sensor set waits for answer from emulator")
+parser.add_argument("csv_path", help="path to CSV file")
 parser.add_argument("--period", type=float, help="interpolation with precise period of milliseconds")
-parser.add_argument("-v", action="store_true", help="verbose sensor set")
 args = parser.parse_args()
 
-if not (args.a or args.g or args.m):
-	ACC_ENABLED = GYRO_ENABLED = MAG_ENABLED = True
-else:
-	ACC_ENABLED = args.a
-	GYRO_ENABLED = args.g
-	MAG_ENABLED = args.m
+ACC_ENABLED = args.a
+GYRO_ENABLED = args.g
+MAG_ENABLED = args.m
+
+if not (ACC_ENABLED or GYRO_ENABLED or MAG_ENABLED):
+	print("All sensors disabled")
+	exit(0)
 
 ACC_ALIASES = {"ax", "accelerometerx", "accelerationx"}, \
 			  {"ay", "accelerometery", "accelerationy"}, \
@@ -68,20 +70,20 @@ def exact(reader, ts_idx, acc_idx, gyr_idx, mag_idx):
 		#beforeInject = time.monotonic()
 		if ACC_ENABLED and all(row[i]!='' for i in acc_idx):
 			ax, ay, az = (row[i] for i in acc_idx)
-			send(f"sensor set acceleration {ax}:{ay}:{az}")
+			send(f"sensor set acceleration {ax}:{ay}:{az}", verbose=args.v)
 
 		if GYRO_ENABLED and all(row[i]!='' for i in gyr_idx):
 			gx, gy, gz = (row[i] for i in gyr_idx)
-			send(f"sensor set gyroscope {gx}:{gy}:{gz}")
+			send(f"sensor set gyroscope {gx}:{gy}:{gz}", verbose=args.v)
 
 		if MAG_ENABLED and all(row[i]!='' for i in mag_idx):
 			mx, my, mz = (row[i] for i in mag_idx)
-			send(f"sensor set magnetic-field {mx}:{my}:{mz}")
+			send(f"sensor set magnetic-field {mx}:{my}:{mz}", verbose=args.v)
 		#afterInject = time.monotonic()
 		#print(f"injection took {(afterInject-beforeInject)*1000} milliseconds")
 
 #precondition: csv file has enough rows for the sliding window.
-def interpolation(reader, ts_idx, acc_idx, gyr_idx, mag_idx):
+def interpolation(reader, ts_idx, acc_idx):
 	print(f"using cubic spline interpolation (only acceleration)")
 	tsWindow = deque(maxlen=4)
 	accWindow = deque(maxlen=4) #queue of xyz tuples
@@ -130,16 +132,19 @@ def interpolation(reader, ts_idx, acc_idx, gyr_idx, mag_idx):
 		
 		if ACC_ENABLED:
 			[ax, ay, az] = acc_spline(now)
-			send(f"sensor set acceleration {ax}:{ay}:{az}")
+			send(f"sensor set acceleration {ax}:{ay}:{az}", verbose=args.v)
 
 		time.sleep(args.period/1000.0)
 
 with open(args.csv_path, newline="") as f:
 	reader = csv.reader(f)
 	headers = next(reader)
+	while headers[0].startswith("#"):
+		headers = next(reader)
+	
 	ts_idx = next(
 		i for i, h in enumerate(headers)
-		if "timestamp" in normalize(h)
+		if normalize(h) == "timestamp"
 	)
 	acc_idx = find_indices(headers, ACC_ALIASES)
 	gyr_idx = find_indices(headers, GYR_ALIASES)

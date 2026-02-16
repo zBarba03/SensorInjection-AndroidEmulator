@@ -13,7 +13,6 @@ const readline = require("readline");
 const path = require("path");
 const admin = require("firebase-admin");
 const { spawn } = require("child_process");
-//import { spawn } from 'node:child_process';
 
 const serviceAccount = require("./serviceAccountKey.json");
 admin.initializeApp({
@@ -50,7 +49,6 @@ const tayutauPath       = process.env.APP_TAYUTAU_APK    || "C:/Users/Utente/Dow
 const accupedoPath      = process.env.APP_ACCUPEDO_APK   || "C:/Users/Utente/Downloads/accupedo-pedometer-9-1-5-1.apk";
 const walkloggerPath    = process.env.APP_WALKLOGGER_APK || "C:/Users/Utente/Downloads/walklogger-pedometer.apk";
 const forlaniPath       = process.env.APP_FORLANI_APK    || "./steplab.apk";
-const motiontrackerPath = process.env.APP_MOTIONTRACKER_APK || "./motiontracker.apk";
 const sensorcsvPath     = process.env.APP_SENSORCSV_APK  || "/home/zbarba/uni/tesi/repo/sensorcsv.apk";
 
 function envBool(name, def) { const v = process.env[name]; if (v == null) return def; return /^(1|true|yes|y|on)$/i.test(v); }
@@ -422,9 +420,7 @@ async function SimulateForlani(driver, isFirstTime = true, config = null) {
 	await sleep(500);
 	try { await driver.$(`android=new UiSelector().textContains("START PEDOMETER")`).click(); } catch {}
 }
-async function SimulateMotiontracker(driver, isFirstTime = true) {
-	// TODO
-}
+
 async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay) {
 	const WAIT_AFTER_CLICK = 1000;
 	
@@ -442,6 +438,8 @@ async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay)
 	try { await driver.$(`android=new UiSelector().textContains("Start Recording")`).click(); } catch {}
 	
 	// start python injection script
+	if(injectionFrequency == 10000)
+		injectionFrequency = 0
 	const result = await new Promise((resolve, reject) => {
 		const py = spawn("./mock.py", [magnitude, injectionFrequency, sensorDelay]);
 		let stdout = "";
@@ -449,8 +447,8 @@ async function SimulateReina(driver, magnitude, injectionFrequency, sensorDelay)
 		py.stdout.on("data", (data) => { stdout += data.toString();});
 		py.stderr.on("data", (data) => { stderr += data.toString();});
 		py.on("close", (code) => {
-		if (code !== 0) { reject(new Error(`Python exited with code ${code}\n${stderr}`)); }
-		else { resolve(stdout); }
+			if (code !== 0) { reject(new Error(`Mock.py exited with code ${code}\n${stderr}`)); }
+			else { resolve(stdout); }
 		});
 		py.on("error", reject);
 	});
@@ -470,7 +468,6 @@ function selectApp(arg) {
 		case "forlani":          return forlaniPath;
 		case "forlani_register": return forlaniPath;
 		case "forlani_results":  return forlaniPath;
-		case "motiontracker":    return motiontrackerPath;
 		case "reina":            return sensorcsvPath;
 		default:
 			console.error("App non riconosciuta:", arg);
@@ -486,7 +483,6 @@ function selectSimulation(arg) {
 		case "forlani":          return SimulateForlani;
 		case "forlani_register": return SimulateForlaniRegister;
 		case "forlani_results":  return SimulateForlaniResults;
-		case "motiontracker":    return SimulateMotiontracker;
 		case "reina":            return SimulateReina;
 		default:                 return async () => {};
 	}
@@ -561,8 +557,8 @@ async function processBatchCSVFiles(driver, appArg, csvFiles) {
 	let isFirstCall = true;
 
 	const isVerificationMode = appArg === 'forlani' &&
-														 SimulateForlani.currentConfig === 3 &&
-														 SimulateForlani.verificationMode === true;
+							   SimulateForlani.currentConfig === 3 &&
+							   SimulateForlani.verificationMode === true;
 
 	for (let i = 0; i < csvFiles.length; i++) {
 		const csvFile = csvFiles[i];
@@ -732,9 +728,9 @@ function isFileAlreadyProcessed(appName, csvFileName) {
 	} catch { return false; }
 }
 
-async function injectBatchPythonMode(driver, appArg) {
+async function injectBatchMockMode(driver, appArg) {
 	if(appArg !== 'reina') {
-		console.error("Modalità non implementata per questa app");
+		console.error("Iniezione mock abilitata soltanto per SensorCSV");
 		process.exit(2);
 	}
 	let injectionCount = 0;
@@ -766,20 +762,20 @@ async function main() {
 
 	if (!appArg) {
 		console.log("Uso:");
-		console.log("  File locale:   node inject_sensors.js <app> <file.csv>");
-		console.log("  Firebase:      node inject_sensors.js <app> firebase");
-		console.log("  Python Script: node inject_sensors.js reina python");
-		console.log("app ∈ { run, tayutau, accupedo, walklogger, forlani, forlani_register, forlani_results, motiontracker, reina }");
+		console.log("  File locale:    node inject_sensors.js <app> <file.csv>");
+		console.log("  Firebase:       node inject_sensors.js <app> firebase");
+		console.log("  Iniezione Mock: node inject_sensors.js reina mock");
+		console.log("app ∈ { run, tayutau, accupedo, walklogger, forlani, forlani_register, forlani_results, reina }");
 		process.exit(2);
 	}
 
 	const app = selectApp(appArg);
-	const isPythonMode = mode === 'python';
+	const isMockMode = mode === 'mock';
 	const isFirebaseMode = mode === 'firebase';
 	let csvFiles = [];
 
-	if (isPythonMode) {
-		// injection fully handled by python script
+	if (isMockMode) {
+		// dati sintetici generati sul momento
 	} else if (isFirebaseMode) {
 		console.log("=== MODALITÀ FIREBASE ===");
 		csvFiles = await selectDateAndDownloadCSVs(appArg);
@@ -814,8 +810,8 @@ async function main() {
 	
 	console.log("== Avvio sessione ==");
 	console.log("APK:", app);
-	if(isPythonMode)
-		console.log("Modalità: Script Python");
+	if(isMockMode)
+		console.log("Modalità: Iniezione Mock");
 	else{
 		console.log(`Modalità: ${isFirebaseMode ? 'Firebase Storage' : 'File locale'}`);
 		console.log(`File da processare: ${csvFiles.length}`);
@@ -824,8 +820,8 @@ async function main() {
 	const driver = await wdio.remote(opts);
 
 	try {
-		if(isPythonMode){
-			await injectBatchPythonMode(driver, appArg);
+		if(isMockMode){
+			await injectBatchMockMode(driver, appArg);
 		}else{
 			await ensureEmulator(driver);
 			await processBatchCSVFiles(driver, appArg, csvFiles);

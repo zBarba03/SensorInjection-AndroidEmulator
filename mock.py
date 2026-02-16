@@ -15,8 +15,10 @@ parser.add_argument("delay", choices=("DELAY-GAME", "DELAY-FASTEST"), help="andr
 args = parser.parse_args()
 
 model = getModel(args.magnitude)
-if(args.frequency == 10000): period = None
+if(args.frequency == 0): period = None
 else: period = 1.0 / args.frequency # in seconds
+
+WRITE_LOGS = False if period is None else True
 
 files = glob.glob(f"../pythonLogs/{args.magnitude}_{args.frequency}_{args.delay}_send_*.csv")
 iteration = len(files)
@@ -30,19 +32,26 @@ if os.path.exists(logFile):
 t0 = time.time()
 now = t0
 end = t0 + 10.0
+count = 0
+
 with open(logFile, "w", newline="") as f:
 	writer = csv.writer(f)
 	writer.writerow(["timestamp", "ax", "ay", "az"])
 
 	while end > now:
-
 		beforeCalc = time.monotonic()
 		[ax, ay, az] = model.value(now-t0)
-		send(f"sensor set acceleration {ax}:{ay}:{az}")
-		timestamp = int(now*1000.0)
-		writer.writerow([timestamp, ax, ay, az])
+		send(f"sensor set acceleration {ax}:{ay}:{az}", verbose=False)
+		if(WRITE_LOGS):
+			timestamp = int(now*1000.0)
+			writer.writerow([timestamp, ax, ay, az])
+		else: count += 1
 		afterCalc = time.monotonic()
 
 		if(period != None and afterCalc-beforeCalc < period):
 			time.sleep(period - (afterCalc-beforeCalc))
 		now = time.time()
+
+if not WRITE_LOGS:
+	print("total number of injections: ", count)
+	print(f"estimated frequency: {count/10.0} Hz")
