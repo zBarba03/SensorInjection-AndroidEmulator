@@ -55,3 +55,20 @@ with open(logFile, "w", newline="") as f:
 if not WRITE_LOGS:
 	print("total number of injections: ", count)
 	print(f"estimated frequency: {count/10.0} Hz")
+
+'''
+t0_csv = None
+t0_real = time.monotonic()
+for row in reader:
+
+	target_csv = int(row[ts_idx])
+	if t0_csv == None:
+		t0_csv = target_csv
+	target_real = t0_real + (target_csv - t0_csv) / 1000.0
+	now_real = time.monotonic()
+	
+	if target_real > now_real:
+		time.sleep(target_real - now_real)
+	
+	#beforeInject = time.monotonic()
+'''

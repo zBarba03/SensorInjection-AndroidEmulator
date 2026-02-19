@@ -85,7 +85,7 @@ def exact(reader, ts_idx, acc_idx, gyr_idx, mag_idx):
 #precondition: csv file has enough rows for the sliding window.
 def interpolation(reader, ts_idx, acc_idx):
 	print(f"using cubic spline interpolation (only acceleration)")
-	tsWindow = deque(maxlen=4)
+	tsWindow = deque(maxlen=4) #queue of timestamps in millis csv
 	accWindow = deque(maxlen=4) #queue of xyz tuples
 
 	startId = 1
@@ -111,30 +111,31 @@ def interpolation(reader, ts_idx, acc_idx):
 		return True
 	
 	#csv timestamps translated into real time
-	t0 = time.time()
-	csv_delta = t0 - tsWindow[startId]/1000.0
+	t0 = time.time() # in seconds real
+	csv_delta = t0 - tsWindow[startId]/1000.0 # difference between real time and csv time, in seconds
 	def convert(csv_timestamp):
-		return csv_timestamp/1000.0 + csv_delta
-	
+		return csv_timestamp/1000000.0 + csv_delta # convert csv timestamp in microseconds to real time in seconds
+
 	def interpolator(timeWindow, valuesWindow):
 		timestamps = list(convert(ts) for ts in timeWindow)
 		values = list(valuesWindow)
+		# Cublic spline calculated from values in real time seconds
 		return CubicSpline(timestamps, values)
-	
+
 	acc_spline = interpolator(tsWindow, accWindow)
 	csvHasNext = True
 	while csvHasNext:
 		now = time.time()
-		
+
 		while now > convert(tsWindow[slideId]) and csvHasNext:
 			csvHasNext = slide(reader)
 			acc_spline = interpolator(tsWindow, accWindow)
-		
+
 		if ACC_ENABLED:
 			[ax, ay, az] = acc_spline(now)
 			send(f"sensor set acceleration {ax}:{ay}:{az}", verbose=args.v)
 
-		time.sleep(args.period/1000.0)
+		time.sleep(args.period/1000000.0)
 
 with open(args.csv_path, newline="") as f:
 	reader = csv.reader(f)

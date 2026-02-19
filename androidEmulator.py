@@ -19,4 +19,4 @@ def send(cmd: str, verbose: bool = False):
 	if verbose:
 		out = proc.stdout.readline().strip()
 		print(f"{time.time():.3f}> {cmd}")
-		#if out != "OK": print(out)
+		if out != "OK": print(out)
