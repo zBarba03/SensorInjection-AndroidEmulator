@@ -734,7 +734,7 @@ async function injectBatchMockMode(driver, appArg) {
 		process.exit(2);
 	}
 	let injectionCount = 0;
-	const iterationsCount = 10;
+	const iterationsCount = 5;
 	//const simulate = selectSimulation(appArg);
 	
 	for(iteration=0; iteration<iterationsCount; iteration++) {

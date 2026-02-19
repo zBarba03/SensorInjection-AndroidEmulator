@@ -14,24 +14,27 @@ parser.add_argument("frequency", type=int, help="injection frequency in hertz")
 parser.add_argument("delay", choices=("DELAY-GAME", "DELAY-FASTEST"), help="android sensor delay (used only for csv logging)")
 args = parser.parse_args()
 
+S2NS = 1000000000
 model = getModel(args.magnitude)
 if(args.frequency == 0): period = None
-else: period = 1.0 / args.frequency # in seconds
+else: period = S2NS / args.frequency
+
+print(f"period (ns): {period}")
 
 WRITE_LOGS = False if period is None else True
 
-files = glob.glob(f"../pythonLogs/{args.magnitude}_{args.frequency}_{args.delay}_send_*.csv")
+files = glob.glob(f"./send/{args.magnitude}_{args.frequency}_{args.delay}_send_*.csv")
 iteration = len(files)
-logFile = f"../pythonLogs/{args.magnitude}_{args.frequency}_{args.delay}_send_{iteration}.csv"
+logFile = f"./send/{args.magnitude}_{args.frequency}_{args.delay}_send_{iteration}.csv"
 print("writing to ", logFile)
 
 if os.path.exists(logFile):
 	print("error in iteration numbers, exiting")
 	exit(1)
 
-t0 = time.time()
+t0 = time.monotonic_ns()
 now = t0
-end = t0 + 10.0
+end = t0 + 10*S2NS
 count = 0
 
 with open(logFile, "w", newline="") as f:
@@ -39,36 +42,20 @@ with open(logFile, "w", newline="") as f:
 	writer.writerow(["timestamp", "ax", "ay", "az"])
 
 	while end > now:
-		beforeCalc = time.monotonic()
-		[ax, ay, az] = model.value(now-t0)
+		[ax, ay, az] = model.value((time.monotonic_ns()-t0)/S2NS)
 		send(f"sensor set acceleration {ax}:{ay}:{az}", verbose=False)
 		if(WRITE_LOGS):
-			timestamp = int(now*1000.0)
+			# timestamps always in millis since epoch
+			timestamp = int(time.time()*1000.0)
 			writer.writerow([timestamp, ax, ay, az])
-		else: count += 1
-		afterCalc = time.monotonic()
+		count += 1
 
-		if(period != None and afterCalc-beforeCalc < period):
-			time.sleep(period - (afterCalc-beforeCalc))
-		now = time.time()
+		now = time.monotonic_ns()
+		if(period != None ):
+			target = t0 + count*period
+			if now < target:
+				time.sleep((target-now)/S2NS)
 
 if not WRITE_LOGS:
 	print("total number of injections: ", count)
 	print(f"estimated frequency: {count/10.0} Hz")
-
-'''
-t0_csv = None
-t0_real = time.monotonic()
-for row in reader:
-
-	target_csv = int(row[ts_idx])
-	if t0_csv == None:
-		t0_csv = target_csv
-	target_real = t0_real + (target_csv - t0_csv) / 1000.0
-	now_real = time.monotonic()
-	
-	if target_real > now_real:
-		time.sleep(target_real - now_real)
-	
-	#beforeInject = time.monotonic()
-'''
