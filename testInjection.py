@@ -193,7 +193,7 @@ def startReina(driver, magnitude, frequency, delay):
 def stopReina(driver):
 	click(driver, txt = "Stop and Save")
 
-def testMockInjection(driver, repetitions)
+def testMockInjection(driver, repetitions):
 	click(driver, "Injection")
 	for i in range(repetitions):
 		for magnitude in ["Lower", "Normal", "Higher"]:
