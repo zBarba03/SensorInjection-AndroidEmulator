@@ -1,10 +1,10 @@
 #!/home/zbarba/uni/tesi/repo/.venv/bin/python3
 # Appium and selenium are installed in a virtual enviroment
 import subprocess
-from appium import webdriver
-from appium.webdriver.common.appiumby import AppiumBy
-from appium.options.android import UiAutomator2Options
-from selenium.webdriver.common.by import By
+from appium import webdriver # type: ignore
+from appium.webdriver.common.appiumby import AppiumBy # type: ignore
+from appium.options.android import UiAutomator2Options # type: ignore
+from selenium.webdriver.common.by import By # type: ignore
 import argparse
 import csv
 import os
@@ -42,6 +42,8 @@ MAGNITUDES = ["Lower", "Normal", "Higher"]
 FREQUENCIES = ["50", "100", "200", "500", "1000", "0"]
 DELAYS = ["Game", "Fastest"]
 ITERATIONS = 20
+
+# -------- Automation --------
 
 def start_appium():
 	print("Starting Appium server... ", end="", flush=True)
@@ -206,7 +208,6 @@ def countProgress(realFiles):
 	if os.path.exists(OUTPUT):
 		with open(OUTPUT, "r", newline="") as f:
 			reader = csv.reader(f)
-			header = next(reader, None)  # skip header
 			for row in reader:
 				file, mode, sampling, alg, steps = row
 				if (any(file == os.path.basename(rf) for rf in realFiles) and
@@ -214,21 +215,24 @@ def countProgress(realFiles):
 					any(sampling == m for m in SAMPLINGS) and
 					any(alg == f"{a}+{filt}" for a, filt in ALGORITHMS)):
 					alreadyTested[(file, mode, alg)] += 1
+
+	# number capped at the repetitions we're interested in achieving
+	for test in alreadyTested:
+		if alreadyTested[test] >= REPETITIONS:
+			alreadyTested[test] = REPETITIONS
+
 	return alreadyTested
 
-def testPedometer(driver, realFiles):
-	# tests files in real/ directory, with all alg+filter configurations
-	# writes results in OUTPUT
-	
+def testPedometer(driver, realFiles, action="live"):
 	alreadyTested = countProgress(realFiles)
 	tested = sum(alreadyTested.values())
-	total = len(realFiles) * len(INTERPS) * len(ALGORITHMS) * REPETITIONS
+	total = len(realFiles) * len(ALGORITHMS) * REPETITIONS * ((len(INTERPS) * len(SAMPLINGS)) - len(INTERP_ALGS)) # sampling cannot be max for interplations at 50
 	print(f"Already tested: {tested} / {total}")
 
 	seconds = 38 * (total - tested)
-	hous = seconds // 3600
+	hours = seconds // 3600
 	mins = (seconds % 3600) // 60
-	print(f"Roughly estimated time: {hous}h {mins}m")
+	print(f"Roughly estimated time: {hours}h {mins}m")
 
 	startInjection = input("Are you sure you can start this session? (y/n)")
 	if startInjection.lower() != "y":
@@ -241,26 +245,40 @@ def testPedometer(driver, realFiles):
 			writer.writerow(["file", "mode", "sampling", "algorithm", "steps"])
 
 		for path in realFiles:
-			file = os.path.basename(path)
-			print(f"file: {file}")
+			print(f"file: {os.path.basename(path)}")
 			for mode in INTERPS:
 				# injection frequency
-				frequency = None if mode=="exact" else mode.split("-")[1]
-				
-				for sampling in ["50" if frequency == "50" else SAMPLINGS]:
+				for sampling in SAMPLINGS:
+
+					if(sampling == "max" and mode.split("-")[1] == "50"):
+						continue
+
 					print(f"-mode: {mode} -> {sampling} sampling")
 					for alg, filt in ALGORITHMS:
 						print(f"- -algorithm: {alg}+{filt}")
 
-						start = alreadyTested[(file, mode, f"{alg}+{filt}")]
+						start = alreadyTested[(os.path.basename(path), mode, f"{alg}+{filt}")]
 						for i in range(start, REPETITIONS):
-							startForlaniLive(driver, alg, filt, sampling)
+							if action == "live":
+								startForlaniLive(driver, alg, filt, sampling)
+							elif action == "register":
+								# TODO can't change sampling in register
+								startForlaniRegister(driver, sampling)
+							else:
+								print(f"Unknown steplab action {action}")
+								quitAll(1)
+
 							if mode == "exact":
 								exactInjection(path)
 							else:
-								interpInjection(path, frequency, model="cubic" if "cubic" in mode else "pchip")
-							steps = readSteps(driver)
-							writer.writerow([file, mode, sampling, f"{alg}+{filt}", int(steps)])
+								interpInjection(path, mode.split("-")[1], model="cubic" if "cubic" in mode else "pchip")
+							
+							if action == "live":
+								steps = readSteps(driver)
+							else:
+								steps = "0"
+							
+							writer.writerow([os.path.basename(path), mode, sampling, f"{alg}+{filt}", int(steps)])
 							print(f"   | {steps} steps")
 
 # -------- SensorCSV --------
@@ -299,10 +317,12 @@ def testMockInjection(driver):
 
 if __name__ == "__main__":
 	appium_proc = start_appium()
-	driver = createDriver(args.app)
+	driver = createDriver(args.app.split("_")[0])
 	
 	if(args.app == "steplab"):
-		testPedometer(driver, args.csvFiles)
+		testLivePedometer(driver, args.csvFiles)
+	elif(args.app == "steplab_register"):
+		testStaticPedometer(driver, args.csvFiles)
 	elif(args.app == "sensorcsv"):
 		testMockInjection(driver)
 
