@@ -11,7 +11,7 @@ import os
 parser = argparse.ArgumentParser()
 parser.add_argument("magnitude", choices=("Lower", "Normal", "Higher"))
 parser.add_argument("frequency", type=int, help="injection frequency in hertz")
-parser.add_argument("delay", choices=("DELAY-GAME", "DELAY-FASTEST"), help="android sensor delay (used only for csv logging)")
+parser.add_argument("delay", choices=("Game", "Fastest"), help="android sensor delay (used only for csv logging)")
 args = parser.parse_args()
 
 S2NS = 1000000000
@@ -39,15 +39,17 @@ count = 0
 
 with open(logFile, "w", newline="") as f:
 	writer = csv.writer(f)
-	writer.writerow(["timestamp", "ax", "ay", "az"])
+	writer.writerow(["timestamp", "ax", "ay", "az", "nano"])
 
 	while end > now:
-		[ax, ay, az] = model.value((time.monotonic_ns()-t0)/S2NS)
+		now = time.monotonic_ns()
+		[ax, ay, az] = model.value((now-t0)/S2NS)
 		send(f"sensor set acceleration {ax}:{ay}:{az}", verbose=False)
 		if(WRITE_LOGS):
 			# timestamps always in millis since epoch
+			# nano added for precision
 			timestamp = int(time.time()*1000.0)
-			writer.writerow([timestamp, ax, ay, az])
+			writer.writerow([timestamp, ax, ay, az, now-t0])
 		count += 1
 
 		now = time.monotonic_ns()
@@ -55,6 +57,8 @@ with open(logFile, "w", newline="") as f:
 			target = t0 + count*period
 			if now < target:
 				time.sleep((target-now)/S2NS)
+	if not WRITE_LOGS:
+		writer.writerow([count])
 
 if not WRITE_LOGS:
 	print("total number of injections: ", count)
