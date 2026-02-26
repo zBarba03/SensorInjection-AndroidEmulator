@@ -67,7 +67,7 @@ S2NS = 1000000000
 
 class InterpolationModel:
 	def __init__(self, file, kind="cubic"):
-		data = np.loadtxt(file, delimiter=",", skiprows=1)
+		data = np.loadtxt(file, delimiter=",", skiprows=1, usecols=[0,1,2,3]) #, usecols=[0,1,2,3] may need to remove excess columns from origin walk
 
 		# first column is in milliseconds since epoch
 		# convert to nanoseconds since start
@@ -80,11 +80,11 @@ class InterpolationModel:
 		# fourth column is nanoseconds.
 		# not present in recorded "real" files as it was added later
 		self.hasNano = False
-		try:
-			timestamps = data[:,4] - data[:,4].min()
-			self.hasNano = True
-			print("WARNING: using nanosecond precision")
-		except:	pass
+		#try:
+		#	timestamps = data[:,4] - data[:,4].min()
+		#	self.hasNano = True
+		#	print("WARNING: using nanosecond precision")
+		#except:	pass
 		
 		if not np.all(np.diff(timestamps) > 0):
 			raise ValueError("Timestamps not monotonic??")
