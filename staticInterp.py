@@ -4,29 +4,23 @@ import csv
 import numpy as np
 from utils import InterpolationModel
 
-INPUT_DIR = "fulldata/"
-OUTPUT_DIR = "interp/"
 FREQ = 50
-MODEL_KIND = "cubic"
-
-S2NS = 1_000_000_000
+S2NS = 1000000000
 PERIOD = S2NS // FREQ
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-files = sorted(glob.glob(INPUT_DIR + "*.csv"))
+files = sorted(glob.glob("fulldata/*.csv"))
 
 for file in files:
 
     print("Processing:", file)
 
-    model = InterpolationModel(file, kind=MODEL_KIND)
+    model = InterpolationModel(file, kind="cubic")
 
     duration = model.duration_ns()
     t_values = np.arange(0, duration, PERIOD)
 
     outname = "i_" + os.path.basename(file)
-    outfile = os.path.join(OUTPUT_DIR, outname)
+    outfile = os.path.join("interp/", outname)
 
     with open(outfile, "w", newline="") as f:
         writer = csv.writer(f)
@@ -35,9 +29,6 @@ for file in files:
         for t in t_values:
             ax, ay, az = model.value_ns(t)
 
-            # timestamp in ms since epoch (same format as guide script)
             timestamp = int(t / 1e6)
 
             writer.writerow([timestamp, ax, ay, az, t])
-
-    print("Written:", outfile)

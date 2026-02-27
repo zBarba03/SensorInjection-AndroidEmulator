@@ -7,6 +7,7 @@ from appium.options.android import UiAutomator2Options # type: ignore
 from selenium.webdriver.common.by import By # type: ignore
 from selenium.webdriver.support.ui import WebDriverWait # type: ignore
 from selenium.webdriver.support import expected_conditions as EC # type: ignore
+from selenium.common.exceptions import TimeoutException # type: ignore
 import argparse
 import csv
 import os
@@ -15,7 +16,7 @@ import time
 import glob
 
 parser = argparse.ArgumentParser()
-parser.add_argument("app", choices=("steplab", "steplab_verification", "sensorcsv"), help="which app to test")
+parser.add_argument("app", choices=("steplab_live", "steplab_static", "sensorcsv"), help="which app to test")
 #parser.add_argument("csvFiles", nargs="*", help="path to real recordings of walks")
 args = parser.parse_args()
 
@@ -24,18 +25,20 @@ driver = None
 appium_proc = None
 dirPath = "/home/zbarba/uni/tesi/"
 walksPath = dirPath + "fulldata/*"
+interpPath = dirPath + "interp/*"
 
-# StepLab
-INTERP_ALGS = ["cubic"] #, "pchip"
-INTERP_FRQS = ["50"] #, "100", "200"
-INTERPS = [f"{alg}-{fr}" for alg in INTERP_ALGS for fr in INTERP_FRQS] #["exact"] + 
+# StepLab live
+INTERP_ALGS = [] #"cubic", "pchip"
+INTERP_FRQS = [] #"50", "100", "200"
+INTERPS = ["exact"] # + [f"{alg}-{fr}" for alg in INTERP_ALGS for fr in INTERP_FRQS]
 SAMPLINGS = ["50"] #, "max" # capped at 50 for interpolations at 50hz
 ALGORITHMS = [("Peak","Butterworth")] # MAE 6-7 (Forlani)
 # ("Intersection", "LowPass+2%") # MAE 30
 REPETITIONS = 3
-OUTPUT = dirPath+"pedometerSteps3.csv"
+OUTPUT_LIVE = dirPath+"pedometerExactInterp.csv"
 alreadyTested = defaultdict(int)
-OUTPUT_VERIFICATION = dirPath+"verificationResults.csv"
+# StepLab static
+OUTPUT_STATIC = dirPath+"verificationResults.csv"
 alreadyVerified = set()
 
 # SensorCSV
@@ -66,6 +69,7 @@ def start_appium():
 	exit(1)
 
 def createDriver():
+	global driver
 	if(args.app.startswith("steplab")):
 		apk = dirPath+"repo/steplab.apk"
 		package = "com.example.steplab"
@@ -88,21 +92,24 @@ def createDriver():
 	options.locale = "US"
 
 	driver = webdriver.Remote(appiumServerURL, options=options)
+	driver.orientation = "PORTRAIT"
+
 	print("Done")
-	return driver
 
 def resetDriver():
+	global driver
 	print("Driver Reset")
-	if driver is not None:
+	try:
 		driver.quit()
-	driver = createDriver()
+	finally:
+		createDriver()
 
 def quitAll(val=0):
 	if val==0:
 		print(" -- Testing completed --")
+		driver.quit()
 	else:
 		print(" -- Terminated with Error --")
-	driver.quit()
 	appium_proc.terminate()
 	exit(val)
 
@@ -167,20 +174,18 @@ def waitUntil(text=None, id=None, icon=None):
 				(AppiumBy.ACCESSIBILITY_ID, f"{icon}")
 			))
 	except TimeoutException:
-		print(f"element could not be located")
+		print(f"wait timeout for text={text} id={id}")
 
-# -------- StepLab --------
-
-def readSteps():
-	# reads steps of steplab live testing activity
+def read(id):
 	try:
 		return driver.find_element(
-			By.ID,
-			f"com.example.steplab:id/step_count"
+			AppiumBy.ID,
+			f"com.example.steplab:id/{id}"
 		).text
 	except Exception as e:
-		print(f"Error reading steps: {e}")
-		quitAll(1)
+		print(f"Error reading {id}: {e}")
+
+# -------- StepLab Live Testing --------
 
 def selectConfiguration(algorithm="Peak", filter="Butterworth"):
 	match algorithm:
@@ -251,15 +256,17 @@ def interpInjection(path, frequency, model="cubic"):
 		print(f"{dirPath}repo/interp.py {path} {frequency} {model}")
 		quitAll(1)
 
-def testPedometer(realFiles):
+def liveTests(paths):
 
-	wasCreated = not os.path.exists(OUTPUT)
-	with open(OUTPUT, "a", newline="") as f:
+	wasCreated = not os.path.exists(OUTPUT_LIVE)
+	with open(OUTPUT_LIVE, "a", newline="") as f:
 		writer = csv.writer(f)
 		if wasCreated:
 			writer.writerow(["file", "mode", "sampling", "algorithm", "steps"])
 
-		for path in realFiles:
+		for path in paths:
+			#if "1759165821155_IRREGULAR_STEPS_POCKET_22_MALE_samsung_SM-G770F.csv" in path:
+			#	continue
 			print(f"file: {os.path.basename(path)}")
 			for mode in INTERPS:
 				# injection frequency
@@ -280,15 +287,16 @@ def testPedometer(realFiles):
 								exactInjection(path)
 							else:
 								interpInjection(path, mode.split("-")[1], model="cubic" if "cubic" in mode else "pchip")
-							
-							steps = readSteps()
+
+							steps = read("step_count")
 							
 							writer.writerow([os.path.basename(path), mode, sampling, f"{alg}+{filt}", int(steps)])
 							print(f"   | {steps} steps")
 
-# --------- StepLab Verification --------
+# --------- StepLab Static Testing --------
 
 def importFromDrive(file):
+	waitUntil(id="import_test")
 	click(id="import_test", scroll=False)
 	waitUntil("175")
 	click("Drive")
@@ -300,22 +308,14 @@ def importFromDrive(file):
 		click("WalkDataset")
 	waitUntil("175")
 
-	# searchName è piu corto di visibleName,
-	# altrimenti clicchiamo sul testo appena scritto invece che nel file trovato
-	# visibleName dev'essere ridotto perche i nomi troppo lunghi vengono troncati con "..."
-	# tutto hardcoded
-
-	searchName = file[:15] if file.startswith("17") or file.startswith("i_17") else file[:-3]
+	# hardcoded way to make this function reliable
+	# search for a unique substring but click on a longer substring
+	searchName = file[:15] if file.startswith("17") or file.startswith("i_17") else file[:-4]
 	visibleName = file[:20] if file.startswith("17") or file.startswith("i_17") else file
 
 	waitUntil(icon="Search")
-	#WebDriverWait(driver, 30).until(
-	#	EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Search"))
-	#)
 	click(icon="Search", scroll=False)
-	#driver.find_element(AppiumBy.ACCESSIBILITY_ID, "Search").click()
 	driver.switch_to.active_element.send_keys(searchName)
-	#driver.press_keycode(66)
 
 	waitUntil(visibleName)
 	click(text=visibleName)
@@ -339,14 +339,7 @@ def staticTest(alg="Peak", filt="Butterworth"):
 	click(id="start_comparison")
 	click(id="select", scroll = False) #the blue arrow
 	time.sleep(5) #waitUntil(id="steps") #
-	try:
-		steps = driver.find_element(
-			AppiumBy.ID,
-			f"com.example.steplab:id/steps"
-		).text
-	except Exception as e:
-		print(f"Error reading steps: {e}")
-		quitAll(1)
+	steps = read("steps")
 	driver.back()
 	return int(steps)
 
@@ -357,6 +350,7 @@ def test_A(file):
 	return steps
 
 '''
+# equivalente a iniezione Live
 def test_B(path):
 	waitUntil(id="register_new_test")
 	click(id="register_new_test", scroll=False)
@@ -369,18 +363,19 @@ def test_B(path):
 	deleteTest()
 	return steps
 '''
-
-def fullTest(files):
-	wasCreated = not os.path.exists(OUTPUT_VERIFICATION)
+2
+def staticTests(files):
+	wasCreated = not os.path.exists(OUTPUT_STATIC)
 	files = [path for path in files if os.path.basename(path) not in alreadyVerified]
-	with open(OUTPUT_VERIFICATION, "a", newline="") as f:
+	with open(OUTPUT_STATIC, "a", newline="") as f:
 		writer = csv.writer(f)
 		if wasCreated:
 			writer.writerow(["file", "a", "a_interp"])
 
 		for i, path in enumerate(files, start=1):
-			#if i%5==0:
-			#	resetDriver()
+			if i%8==0:
+				resetDriver()
+
 			file = os.path.basename(path)
 			interpFile = "i_" + file
 
@@ -395,26 +390,6 @@ def fullTest(files):
 			print(f"{a_interp}    A-A' =   {a-a_interp}")
 
 			writer.writerow([file,a,a_interp])
-
-# A-A' differenza sostanziale dovuta a interpolazione
-# A'-B differenza nulla dovuta a iniezione
-
-
-'''
-A  = file originale importato da drive -> test statico su Peak+Butterworth
-A' = modello di interpolazione -> test statico su Peak+Butterworth
-	interpolazione cubic-50, lettura statica
-B  = file iniettato in registrazione -> test statico su Peak+Butterworth
-	interpolazione cubic-50, lettura 50hz
-
-cubic-50
-sampling 50hz <== forlani_register modificato
-Peak+Butterworth
-
-camminata reale -> test statico
-modello di interpolazione A
-interpolazione iniettato in register B ->
-'''
 
 # -------- SensorCSV --------
 
@@ -450,9 +425,9 @@ def testMockInjection():
 
 # -------- Main --------
 
-def countProgress(realFiles):
-	if os.path.exists(OUTPUT):
-		with open(OUTPUT, "r", newline="") as f:
+def countProgressLive(realFiles):
+	if os.path.exists(OUTPUT_LIVE):
+		with open(OUTPUT_LIVE, "r", newline="") as f:
 			reader = csv.reader(f)
 			for row in reader:
 				file, mode, sampling, alg, steps = row
@@ -481,21 +456,21 @@ def countProgress(realFiles):
 	if startInjection.lower() != "y":
 		quit(0)
 
-def countProgressVerification():
-	if not os.path.exists(OUTPUT_VERIFICATION):
+def countProgressStatic(paths):
+	if not os.path.exists(OUTPUT_STATIC):
 		return
-	with open(OUTPUT_VERIFICATION, newline="") as f:
+	with open(OUTPUT_STATIC, newline="") as f:
 		reader = csv.reader(f)
 		next(reader, None)
 		for row in reader:
 			if row:
 				alreadyVerified.add(row[0])
 
-	total = len(glob.glob(dirPath + "fulldata/*"))
+	total = len(paths)
 	tested = len(alreadyVerified)
 	print(f"Already tested: {tested} / {total}")
 
-	seconds = 75 * (total - tested)
+	seconds = 90 * (total - tested)
 	hours = seconds // 3600
 	mins = (seconds % 3600) // 60
 	print(f"Estimated time: {hours}h {mins}m")
@@ -505,20 +480,20 @@ def countProgressVerification():
 		quit(0)
 
 if __name__ == "__main__":
-	if(args.app == "steplab"):
-		countProgress(glob.glob(walksPath))
-	elif(args.app == "steplab_verification"):
-		countProgressVerification()
+	if(args.app == "steplab_live"):
+		countProgressLive(glob.glob(interpPath))
+	elif(args.app == "steplab_static"):
+		countProgressStatic(glob.glob(walksPath))
 	
 	appium_proc = start_appium()
-	driver = createDriver()
+	createDriver()
 
 	try:
-		if(args.app == "steplab"):
-			testPedometer(glob.glob(walksPath))
-		elif(args.app == "steplab_verification"):
-			fullTest(glob.glob(walksPath))
-		elif(args.app == "sensorcsv"):
+		if args.app == "steplab_live":
+			liveTests(glob.glob(interpPath))
+		elif args.app == "steplab_static":
+			staticTests(glob.glob(walksPath))
+		elif args.app == "sensorcsv":
 			testMockInjection()
 		quitAll(0)
 	except:
