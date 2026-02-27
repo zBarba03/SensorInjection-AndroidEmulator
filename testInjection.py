@@ -32,7 +32,7 @@ INTERPS = [f"{alg}-{fr}" for alg in INTERP_ALGS for fr in INTERP_FRQS] #["exact"
 SAMPLINGS = ["50"] #, "max" # capped at 50 for interpolations at 50hz
 ALGORITHMS = [("Peak","Butterworth")] # MAE 6-7 (Forlani)
 # ("Intersection", "LowPass+2%") # MAE 30
-REPETITIONS = 5
+REPETITIONS = 3
 OUTPUT = dirPath+"pedometerSteps3.csv"
 alreadyTested = defaultdict(int)
 OUTPUT_VERIFICATION = dirPath+"verificationResults.csv"
@@ -153,18 +153,21 @@ def click(text=None, id=None, icon=None, scroll = True):
 	quitAll(1)
 
 def waitUntil(text=None, id=None, icon=None):
-	if text is not None:
-		WebDriverWait(driver, 30).until( EC.presence_of_element_located(
-			(AppiumBy.ANDROID_UIAUTOMATOR, f'new UiSelector().textContains("{text}")')
-		))
-	elif id is not None:
-		WebDriverWait(driver, 30).until( EC.presence_of_element_located(
-			(AppiumBy.ID, f"com.example.steplab:id/{id}")
-		))
-	elif icon is not None:
-		WebDriverWait(driver, 30).until( EC.presence_of_element_located(
-			(AppiumBy.ACCESSIBILITY_ID, f"{icon}")
-		))
+	try:
+		if text is not None:
+			WebDriverWait(driver, 30).until( EC.presence_of_element_located(
+				(AppiumBy.ANDROID_UIAUTOMATOR, f'new UiSelector().textContains("{text}")')
+			))
+		elif id is not None:
+			WebDriverWait(driver, 30).until( EC.presence_of_element_located(
+				(AppiumBy.ID, f"com.example.steplab:id/{id}")
+			))
+		elif icon is not None:
+			WebDriverWait(driver, 30).until( EC.presence_of_element_located(
+				(AppiumBy.ACCESSIBILITY_ID, f"{icon}")
+			))
+	except TimeoutException:
+		print(f"element could not be located")
 
 # -------- StepLab --------
 
@@ -220,10 +223,10 @@ def startForlaniLive(algorithm="Peak", filter="Butterworth", sampling = "max"):
 
 	click(id = "start_pedometer")
 
-def exactInjection(file):
+def exactInjection(path):
 	try:
 		subprocess.run(
-			[dirPath+"repo/inject.py", "-a", file],
+			[dirPath+"repo/inject.py", "-a", path],
 			stdout=subprocess.DEVNULL,
 			stderr=subprocess.PIPE,
 			text=True,
@@ -231,13 +234,13 @@ def exactInjection(file):
 		)
 	except Exception as e:
 		print(f"Error from inject.py: {e}")
-		print(f"{dirPath}repo/inject.py -a {file}")
-		exit(1)
+		print(f"{dirPath}repo/inject.py -a {path}")
+		quitAll(1)
 
-def interpInjection(file, frequency, model="cubic"):
+def interpInjection(path, frequency, model="cubic"):
 	try:
 		subprocess.run(
-			[dirPath+"repo/interp.py", dirPath+file, f"{frequency}", model],
+			[dirPath+"repo/interp.py", path, f"{frequency}", model],
 			stdout=subprocess.DEVNULL,
 			stderr=subprocess.PIPE,
 			text=True,
@@ -245,8 +248,8 @@ def interpInjection(file, frequency, model="cubic"):
 		)
 	except Exception as e:
 		print(f"Error from interp.py: {e}")
-		print(f"{dirPath}repo/interp.py {dirPath}{file} {frequency} {model}")
-		exit(1)
+		print(f"{dirPath}repo/interp.py {path} {frequency} {model}")
+		quitAll(1)
 
 def testPedometer(realFiles):
 
@@ -518,6 +521,6 @@ if __name__ == "__main__":
 		elif(args.app == "sensorcsv"):
 			testMockInjection()
 		quitAll(0)
-	except Exception:
+	except:
 		appium_proc.terminate()
 		raise
